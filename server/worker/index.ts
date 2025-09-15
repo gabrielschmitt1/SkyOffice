@@ -3,13 +3,15 @@ export class RoomDurableObject {
   state: DurableObjectState
   env: Env
   rooms: Map<string, any>
-  connections: Set<WebSocket>
+  connections: Map<string, WebSocket>
+  roomConnections: Map<string, Set<string>>
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.env = env
     this.rooms = new Map()
-    this.connections = new Set()
+    this.connections = new Map()
+    this.roomConnections = new Map()
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -37,8 +39,9 @@ export class RoomDurableObject {
     const [client, server] = Object.values(webSocketPair)
 
     server.accept()
-    this.connections.add(server)
-    this.handleGameConnection(server)
+    const connectionId = Math.random().toString(36).substr(2, 9)
+    this.connections.set(connectionId, server)
+    this.handleGameConnection(server, connectionId)
 
     return new Response(null, {
       status: 101,
@@ -46,9 +49,7 @@ export class RoomDurableObject {
     })
   }
 
-  private handleGameConnection(webSocket: WebSocket) {
-    const connectionId = Math.random().toString(36).substr(2, 9)
-    
+  private handleGameConnection(webSocket: WebSocket, connectionId: string) {
     // Enviar confirmação de conexão
     webSocket.send(JSON.stringify({
       type: 'connected',
@@ -64,30 +65,26 @@ export class RoomDurableObject {
         // Processar diferentes tipos de mensagens
         switch (data.type) {
           case 'join_room':
-            webSocket.send(JSON.stringify({
-              type: 'room_joined',
-              roomId: data.roomId || 'lobby',
-              message: 'Successfully joined room'
-            }))
+            this.handleJoinRoom(webSocket, connectionId, data.roomId || 'lobby')
             break
             
           case 'player_move':
-            // Broadcast movimento para outros players
-            this.broadcast({
+            // Broadcast movimento para outros players na mesma sala
+            this.broadcastToRoom({
               type: 'player_moved',
               playerId: connectionId,
               position: data.position
-            }, webSocket)
+            }, connectionId)
             break
 
           case 'chat_message':
-            // Broadcast mensagem de chat
-            this.broadcast({
+            // Broadcast mensagem de chat para a sala
+            this.broadcastToRoom({
               type: 'chat_message',
               playerId: connectionId,
               message: data.message,
               timestamp: Date.now()
-            }, webSocket)
+            }, connectionId)
             break
             
           default:
@@ -105,24 +102,105 @@ export class RoomDurableObject {
 
     webSocket.addEventListener('close', () => {
       console.log('WebSocket connection closed:', connectionId)
-      this.connections.delete(webSocket)
+      this.handleDisconnect(connectionId)
     })
 
     webSocket.addEventListener('error', (event) => {
       console.error('WebSocket error:', event)
-      this.connections.delete(webSocket)
+      this.handleDisconnect(connectionId)
     })
+  }
+
+  private handleJoinRoom(webSocket: WebSocket, connectionId: string, roomId: string) {
+    // Remover de outras salas primeiro
+    this.removeFromAllRooms(connectionId)
+    
+    // Adicionar à nova sala
+    if (!this.roomConnections.has(roomId)) {
+      this.roomConnections.set(roomId, new Set())
+    }
+    this.roomConnections.get(roomId)!.add(connectionId)
+    
+    // Enviar confirmação
+    webSocket.send(JSON.stringify({
+      type: 'room_joined',
+      roomId: roomId,
+      message: 'Successfully joined room',
+      playersInRoom: this.roomConnections.get(roomId)!.size
+    }))
+    
+    // Notificar outros players na sala
+    this.broadcastToRoom({
+      type: 'player_joined',
+      playerId: connectionId,
+      message: 'Player joined the room'
+    }, connectionId)
+    
+    console.log(`Player ${connectionId} joined room ${roomId}. Total players: ${this.roomConnections.get(roomId)!.size}`)
+  }
+
+  private handleDisconnect(connectionId: string) {
+    this.removeFromAllRooms(connectionId)
+    this.connections.delete(connectionId)
+  }
+
+  private removeFromAllRooms(connectionId: string) {
+    for (const [roomId, players] of this.roomConnections) {
+      if (players.has(connectionId)) {
+        players.delete(connectionId)
+        
+        // Notificar outros players que alguém saiu
+        this.broadcastToRoom({
+          type: 'player_left',
+          playerId: connectionId,
+          message: 'Player left the room'
+        }, connectionId)
+        
+        console.log(`Player ${connectionId} left room ${roomId}. Remaining players: ${players.size}`)
+        
+        // Se a sala ficou vazia, podemos removê-la
+        if (players.size === 0) {
+          this.roomConnections.delete(roomId)
+        }
+        break
+      }
+    }
+  }
+
+  private broadcastToRoom(message: any, senderConnectionId: string) {
+    const messageStr = JSON.stringify(message)
+    
+    // Encontrar a sala do sender
+    for (const [roomId, players] of this.roomConnections) {
+      if (players.has(senderConnectionId)) {
+        // Broadcast para todos na sala exceto o sender
+        for (const playerId of players) {
+          if (playerId !== senderConnectionId) {
+            const ws = this.connections.get(playerId)
+            if (ws && ws.readyState === WebSocket.READY_STATE_OPEN) {
+              try {
+                ws.send(messageStr)
+              } catch (error) {
+                console.error('Error broadcasting message:', error)
+                this.handleDisconnect(playerId)
+              }
+            }
+          }
+        }
+        break
+      }
+    }
   }
 
   private broadcast(message: any, sender?: WebSocket) {
     const messageStr = JSON.stringify(message)
-    this.connections.forEach(ws => {
+    this.connections.forEach((ws, connectionId) => {
       if (ws !== sender && ws.readyState === WebSocket.READY_STATE_OPEN) {
         try {
           ws.send(messageStr)
         } catch (error) {
           console.error('Error broadcasting message:', error)
-          this.connections.delete(ws)
+          this.handleDisconnect(connectionId)
         }
       }
     })
@@ -158,10 +236,29 @@ export default {
 
     // API endpoint para listar salas disponíveis
     if (url.pathname === '/api/rooms') {
-      return new Response(JSON.stringify([
-        { id: 'lobby', name: 'Public Lobby', players: 0, maxPlayers: 50 },
-        { id: 'office1', name: 'Office Meeting Room', players: 0, maxPlayers: 20 }
-      ]), {
+      const rooms = []
+      
+      // Adicionar salas ativas com jogadores reais
+      for (const [roomId, players] of this.roomConnections) {
+        rooms.push({
+          id: roomId,
+          name: roomId === 'lobby' ? 'Public Lobby' : `Room ${roomId}`,
+          players: players.size,
+          maxPlayers: 50
+        })
+      }
+      
+      // Adicionar sala lobby padrão se não existir
+      if (!this.roomConnections.has('lobby')) {
+        rooms.push({
+          id: 'lobby',
+          name: 'Public Lobby',
+          players: 0,
+          maxPlayers: 50
+        })
+      }
+      
+      return new Response(JSON.stringify(rooms), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

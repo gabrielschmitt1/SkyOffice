@@ -3,6 +3,7 @@ import store from '../stores'
 import { setSessionId } from '../stores/UserStore'
 import { setLobbyJoined } from '../stores/RoomStore'
 import { pushChatMessage } from '../stores/ChatStore'
+import WebRTC from '../web/WebRTC'
 
 export default class Network {
   private ws?: WebSocket
@@ -155,6 +156,8 @@ export default class Network {
           type: 'join_room',
           roomId: 'public-lobby'
         })
+        // Inicializar WebRTC quando entrar na sala
+        this.initializeWebRTC()
         resolve({ sessionId: this.mySessionId })
       } else {
         reject(new Error('Not connected to server'))
@@ -170,6 +173,8 @@ export default class Network {
           roomId: roomId,
           password: password
         })
+        // Inicializar WebRTC quando entrar na sala
+        this.initializeWebRTC()
         resolve({ sessionId: this.mySessionId })
       } else {
         reject(new Error('Not connected to server'))
@@ -184,6 +189,8 @@ export default class Network {
           type: 'create_room',
           roomData: roomData
         })
+        // Inicializar WebRTC quando entrar na sala
+        this.initializeWebRTC()
         resolve({ sessionId: this.mySessionId })
       } else {
         reject(new Error('Not connected to server'))
@@ -229,12 +236,22 @@ export default class Network {
   // Métodos para compatibilidade com WebRTC
   readyToConnect() {
     console.log('🎥 Ready to connect video')
-    // TODO: Implementar lógica de WebRTC
+    if (this.webRTC) {
+      this.webRTC.checkPreviousPermission()
+    }
   }
 
   videoConnected() {
     console.log('🎥 Video connected')
-    // TODO: Implementar lógica de WebRTC
+    // WebRTC já foi inicializado quando o usuário entrou na sala
+  }
+
+  // Inicializar WebRTC quando entrar em uma sala
+  initializeWebRTC() {
+    if (!this.webRTC && this.mySessionId) {
+      this.webRTC = new WebRTC(this.mySessionId, this)
+      console.log('🎥 WebRTC initialized for session:', this.mySessionId)
+    }
   }
 
   // Métodos para eventos (compatibilidade)
@@ -286,7 +303,7 @@ export default class Network {
   }
 
   // Propriedade webRTC para compatibilidade
-  webRTC?: any
+  webRTC?: WebRTC
 
   // Método para limpeza
   disconnect() {
