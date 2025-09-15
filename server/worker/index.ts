@@ -65,28 +65,28 @@ export class RoomDurableObject {
   }
 
   private handleColyseusConnection(webSocket: WebSocket) {
-    // Simular conexão HTTP para Colyseus
-    const mockRequest = {
-      url: '/ws',
-      headers: {},
-      method: 'GET',
-    }
-
-    const mockResponse = {
-      writeHead: () => {},
-      end: () => {},
-      on: () => {},
-    }
-
-    // Integrar WebSocket com Colyseus
+    // Implementação simplificada para Cloudflare Workers
+    // TODO: Integrar adequadamente com Colyseus quando suportado
+    
     webSocket.addEventListener('message', (event) => {
-      // Processar mensagens do cliente através do Colyseus
-      this.server.onMessage(mockRequest as any, mockResponse as any, event.data)
+      try {
+        const data = JSON.parse(event.data as string)
+        // Processar mensagens básicas
+        console.log('Received message:', data)
+        
+        // Echo para teste
+        webSocket.send(JSON.stringify({ type: 'echo', data }))
+      } catch (error) {
+        console.error('Error processing message:', error)
+      }
     })
 
     webSocket.addEventListener('close', () => {
-      // Cleanup quando conexão fechar
-      this.server.onDisconnect(mockRequest as any)
+      console.log('WebSocket connection closed')
+    })
+
+    webSocket.addEventListener('error', (event) => {
+      console.error('WebSocket error:', event)
     })
   }
 }
