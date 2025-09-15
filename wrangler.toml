@@ -1,6 +1,6 @@
 # wrangler.toml (wrangler v3.88.0^)
 name = "skyoffice"
-main = "server/worker-dist/server/worker/index.js"
+main = "server/worker-dist/server/worker-main.js"
 compatibility_date = "2023-10-30"
 compatibility_flags = ["nodejs_compat"]
 

@@ -20,6 +20,7 @@
     },
     "include": [
       "worker/**/*",
+      "worker-main.ts",
       "../types/**/*"
     ],
     "exclude": [

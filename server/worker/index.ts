@@ -24,11 +24,50 @@ export class RoomDurableObject {
       return this.handleWebSocket(request)
     }
     
+    // Handler para matchmaking
+    if (url.pathname === '/matchmake/joinOrCreate/skyoffice') {
+      return this.handleMatchmaking(request)
+    }
+    
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 })
     }
     
     return new Response('Not Found', { status: 404 })
+  }
+
+  async handleMatchmaking(request: Request): Promise<Response> {
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    }
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 200, headers: corsHeaders })
+    }
+
+    const roomId = Math.random().toString(36).substr(2, 9)
+    const sessionId = Math.random().toString(36).substr(2, 9)
+    
+    return new Response(JSON.stringify({ 
+      room: {
+        clients: 1,
+        createdAt: new Date().toISOString(),
+        maxClients: null,
+        metadata: {
+          name: 'Public Lobby',
+          description: 'For making friends and familiarizing yourself with the controls',
+          hasPassword: false
+        },
+        name: 'skyoffice',
+        processId: Math.random().toString(36).substr(2, 9),
+        roomId: roomId
+      },
+      sessionId: sessionId
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
   }
 
   async handleWebSocket(request: Request): Promise<Response> {
@@ -409,6 +448,14 @@ export default {
     }
 
     // Endpoint para criar/juntar-se a uma sala
+    if (url.pathname === '/matchmake/joinOrCreate/skyoffice') {
+      // Redirecionar para Durable Object para processar a conexão
+      const durableObjectId = env.ROOMS.idFromName('game-server')
+      const durableObject = env.ROOMS.get(durableObjectId)
+      return durableObject.fetch(request)
+    }
+    
+    // Endpoint para lobby (compatibilidade)
     if (url.pathname === '/matchmake/joinOrCreate/lobby') {
       return new Response(JSON.stringify({ 
         message: 'Lobby endpoint',
@@ -435,7 +482,7 @@ export default {
           health: '/health',
           websocket: '/ws',
           rooms: '/api/rooms',
-          matchmaking: '/matchmake/joinOrCreate/lobby'
+          matchmaking: '/matchmake/joinOrCreate/skyoffice'
         },
         timestamp: new Date().toISOString(),
         status: 'online'

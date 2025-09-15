@@ -14,7 +14,8 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
           phaser: ['phaser'],
-          mui: ['@mui/material', '@mui/icons-material']
+          mui: ['@mui/material', '@mui/icons-material'],
+          colyseus: ['colyseus.js']
         }
       }
     }

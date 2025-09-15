@@ -1,386 +1,291 @@
+import { Client, Room } from 'colyseus.js'
+import { IComputer, IOfficeState, IPlayer, IWhiteboard } from '../../../types/IOfficeState'
+import { Message } from '../../../types/Messages'
+import { IRoomData, RoomType } from '../../../types/Rooms'
+import { ItemType } from '../../../types/Items'
+import WebRTC from '../web/WebRTC'
 import { phaserEvents, Event } from '../events/EventCenter'
 import store from '../stores'
-import { setSessionId } from '../stores/UserStore'
-import { setLobbyJoined } from '../stores/RoomStore'
-import { pushChatMessage } from '../stores/ChatStore'
-import WebRTC from '../web/WebRTC'
+import { setSessionId, setPlayerNameMap, removePlayerNameMap } from '../stores/UserStore'
+import {
+  setLobbyJoined,
+  setJoinedRoomData,
+  setAvailableRooms,
+  addAvailableRooms,
+  removeAvailableRooms,
+} from '../stores/RoomStore'
+import {
+  pushChatMessage,
+  pushPlayerJoinedMessage,
+  pushPlayerLeftMessage,
+} from '../stores/ChatStore'
+import { setWhiteboardUrls } from '../stores/WhiteboardStore'
 
 export default class Network {
-  private ws?: WebSocket
-  private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
-  private reconnectDelay = 2000
+  private client: Client
+  private room?: Room<IOfficeState>
+  private lobby!: Room
+  webRTC?: WebRTC
 
   mySessionId!: string
-  connected = false
 
   constructor() {
-    this.connect()
-    
-    // Eventos do Phaser
-    phaserEvents.on(Event.MY_PLAYER_NAME_CHANGE, this.updatePlayerName, this)
-    phaserEvents.on(Event.MY_PLAYER_TEXTURE_CHANGE, this.updatePlayer, this)
-  }
-
-  private connect() {
     const protocol = window.location.protocol.replace('http', 'ws')
     let endpoint: string
     
     if (process.env.NODE_ENV === 'production') {
+      // Para Cloudflare Pages/Workers
       endpoint = import.meta.env.VITE_SERVER_URL || 'wss://skyoffice.gabrielschmitt7.workers.dev'
     } else {
-      endpoint = `${protocol}//${window.location.hostname}:3000`
+      // Para desenvolvimento local
+      endpoint = `${protocol}//${window.location.hostname}:2567`
     }
-
-    // Adicionar /ws se não estiver presente
-    if (!endpoint.endsWith('/ws')) {
-      endpoint += '/ws'
-    }
-
-    console.log('🔗 Connecting to:', endpoint)
-
-    try {
-      this.ws = new WebSocket(endpoint)
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error)
-      this.attemptReconnect()
-      return
-    }
-
-    this.ws.onopen = () => {
-      console.log('✅ Connected to SkyOffice server!')
-      this.connected = true
-      this.reconnectAttempts = 0
-      
-      // Simular conexão bem-sucedida
-      this.mySessionId = Math.random().toString(36).substr(2, 9)
-      store.dispatch(setSessionId(this.mySessionId))
-      store.dispatch(setLobbyJoined(true))
-      
-      // Enviar mensagem inicial
-      this.send({
-        type: 'join_room',
-        roomId: 'lobby'
-      })
-    }
-
-    this.ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        this.handleMessage(data)
-      } catch (error) {
-        console.error('Error parsing message:', error)
-      }
-    }
-
-    this.ws.onclose = () => {
-      console.log('❌ Disconnected from server')
-      this.connected = false
-      store.dispatch(setLobbyJoined(false))
-      this.attemptReconnect()
-    }
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-      this.connected = false
-      store.dispatch(setLobbyJoined(false))
-    }
-  }
-
-  private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++
-      console.log(`🔄 Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`)
-      
-      setTimeout(() => {
-        this.connect()
-      }, this.reconnectDelay * this.reconnectAttempts)
-    } else {
-      console.error('❌ Max reconnection attempts reached')
-    }
-  }
-
-  private handleMessage(data: any) {
-    console.log('📨 Received:', data)
-
-    switch (data.type) {
-      case 'connected':
-        console.log('✅ Server confirmed connection:', data.message)
-        break
-        
-      case 'room_joined':
-        console.log('🏠 Joined room:', data.roomId)
-        this.mySessionId = data.connectionId || Math.random().toString(36).substr(2, 9)
-        store.dispatch(setSessionId(this.mySessionId))
-        
-        // Criar jogadores existentes na sala
-        if (data.existingPlayers && Array.isArray(data.existingPlayers)) {
-          console.log('👥 Creating existing players:', data.existingPlayers)
-          data.existingPlayers.forEach((playerId: string) => {
-            const existingPlayer = {
-              x: 0,
-              y: 0,
-              name: `Player ${playerId}`,
-              animKey: 'adam-idle-down'
-            } as any
-            phaserEvents.emit(Event.PLAYER_JOINED, existingPlayer, playerId)
-          })
-        }
-        
-        // Garantir que WebRTC seja inicializado
-        this.initializeWebRTC()
-        break
-        
-      case 'player_moved':
-        // Emitir evento para o Phaser
-        phaserEvents.emit(Event.PLAYER_UPDATED, {
-          sessionId: data.playerId,
-          x: data.position?.x,
-          y: data.position?.y
-        })
-        break
-        
-      case 'player_joined':
-        console.log('👤 Player joined:', data.playerId)
-        // Criar um objeto player simulado para compatibilidade
-        const newPlayer = {
-          x: 0,
-          y: 0,
-          name: `Player ${data.playerId}`,
-          animKey: 'adam-idle-down'
-        } as any
-        phaserEvents.emit(Event.PLAYER_JOINED, newPlayer, data.playerId)
-        break
-        
-      case 'player_left':
-        console.log('👋 Player left:', data.playerId)
-        phaserEvents.emit(Event.PLAYER_LEFT, data.playerId)
-        break
-        
-      case 'chat_message':
-        // Adicionar mensagem ao chat
-        const chatMessage = {
-          author: data.playerId || 'Unknown',
-          createdAt: data.timestamp || Date.now(),
-          content: data.message || ''
-        } as any
-        store.dispatch(pushChatMessage(chatMessage))
-        break
-        
-      case 'computer_user_joined':
-        console.log('💻 User joined computer:', data.playerId, 'computer:', data.computerId)
-        // Emitir evento para o Game.ts (playerId, itemId, itemType)
-        phaserEvents.emit(Event.ITEM_USER_ADDED, data.playerId, data.computerId, 'COMPUTER')
-        break
-        
-      case 'computer_user_left':
-        console.log('💻 User left computer:', data.playerId, 'computer:', data.computerId)
-        // Emitir evento para o Game.ts (playerId, itemId, itemType)
-        phaserEvents.emit(Event.ITEM_USER_REMOVED, data.playerId, data.computerId, 'COMPUTER')
-        break
-        
-      case 'room_created':
-        console.log('🏠 Custom room created:', data.roomId)
-        this.mySessionId = data.connectionId || Math.random().toString(36).substr(2, 9)
-        store.dispatch(setSessionId(this.mySessionId))
-        // Inicializar WebRTC quando entrar na sala criada
-        setTimeout(() => {
-          this.initializeWebRTC()
-        }, 100)
-        break
-        
-      case 'echo':
-        console.log('🔊 Echo from server:', data.data)
-        break
-        
-      default:
-        console.log('❓ Unknown message type:', data.type)
-    }
-  }
-
-  private send(data: any) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data))
-    } else {
-      console.warn('⚠️ WebSocket not connected, cannot send:', data)
-    }
-  }
-
-  // Métodos para compatibilidade com o código existente
-  async joinOrCreatePublic(): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (this.connected) {
-        this.send({
-          type: 'join_room',
-          roomId: 'lobby'
-        })
-        // Inicializar WebRTC quando entrar na sala
-        this.initializeWebRTC()
-        resolve({ sessionId: this.mySessionId })
-      } else {
-        reject(new Error('Not connected to server'))
-      }
-    })
-  }
-
-  async joinCustomById(roomId: string, password?: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (this.connected) {
-        this.send({
-          type: 'join_room',
-          roomId: roomId,
-          password: password
-        })
-        // Inicializar WebRTC quando entrar na sala
-        this.initializeWebRTC()
-        resolve({ sessionId: this.mySessionId })
-      } else {
-        reject(new Error('Not connected to server'))
-      }
-    })
-  }
-
-  async createCustom(roomData: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      if (this.connected) {
-        this.send({
-          type: 'create_room',
-          roomData: roomData
-        })
-        // Inicializar WebRTC quando entrar na sala
-        this.initializeWebRTC()
-        resolve({ sessionId: this.mySessionId })
-      } else {
-        reject(new Error('Not connected to server'))
-      }
-    })
-  }
-
-  // Métodos para atualizações do jogador
-  updatePlayer(currentX: number, currentY: number, currentAnim: string) {
-    this.send({
-      type: 'player_move',
-      position: { x: currentX, y: currentY },
-      animation: currentAnim
-    })
-  }
-
-  updatePlayerName(currentName: string) {
-    this.send({
-      type: 'player_name',
-      name: currentName
-    })
-  }
-
-  // Método para chat
-  sendChatMessage(content: string) {
-    this.send({
-      type: 'chat_message',
-      message: content
-    })
     
-    // Adicionar a própria mensagem ao chat imediatamente
-    const myChatMessage = {
-      author: this.mySessionId || 'Me',
-      createdAt: Date.now(),
-      content: content
-    } as any
-    store.dispatch(pushChatMessage(myChatMessage))
+    this.client = new Client(endpoint)
+    this.joinLobbyRoom().then(() => {
+      store.dispatch(setLobbyJoined(true))
+    })
+
+    phaserEvents.on(Event.MY_PLAYER_NAME_CHANGE, this.updatePlayerName, this)
+    phaserEvents.on(Event.MY_PLAYER_TEXTURE_CHANGE, this.updatePlayer, this)
+    phaserEvents.on(Event.PLAYER_DISCONNECTED, this.playerStreamDisconnect, this)
   }
 
-  // Métodos para computadores
-  connectToComputer(computerId: string) {
-    console.log('💻 Computer connection requested:', computerId)
-    this.send({
-      type: 'connect_computer',
-      computerId: computerId
+  /**
+   * method to join Colyseus' built-in LobbyRoom, which automatically notifies
+   * connected clients whenever rooms with "realtime listing" have updates
+   */
+  async joinLobbyRoom() {
+    this.lobby = await this.client.joinOrCreate(RoomType.LOBBY)
+
+    this.lobby.onMessage('rooms', (rooms) => {
+      store.dispatch(setAvailableRooms(rooms))
+    })
+
+    this.lobby.onMessage('+', ([roomId, room]) => {
+      store.dispatch(addAvailableRooms({ roomId, room }))
+    })
+
+    this.lobby.onMessage('-', (roomId) => {
+      store.dispatch(removeAvailableRooms(roomId))
     })
   }
 
-  connectToWhiteboard(whiteboardId: string) {
-    console.log('📝 Whiteboard connection requested:', whiteboardId)
-    // TODO: Implementar lógica de whiteboard
+  // method to join the public lobby
+  async joinOrCreatePublic() {
+    this.room = await this.client.joinOrCreate(RoomType.PUBLIC)
+    this.initialize()
   }
 
-  // Métodos para compatibilidade com WebRTC
-  readyToConnect() {
-    console.log('🎥 Ready to connect video')
-    if (this.webRTC) {
-      this.webRTC.checkPreviousPermission()
+  // method to join a custom room
+  async joinCustomById(roomId: string, password: string | null) {
+    this.room = await this.client.joinById(roomId, { password })
+    this.initialize()
+  }
+
+  // method to create a custom room
+  async createCustom(roomData: IRoomData) {
+    const { name, description, password, autoDispose } = roomData
+    this.room = await this.client.create(RoomType.CUSTOM, {
+      name,
+      description,
+      password,
+      autoDispose,
+    })
+    this.initialize()
+  }
+
+  // set up all network listeners before the game starts
+  initialize() {
+    if (!this.room) return
+
+    this.lobby.leave()
+    this.mySessionId = this.room.sessionId
+    store.dispatch(setSessionId(this.room.sessionId))
+    this.webRTC = new WebRTC(this.mySessionId, this)
+
+    // new instance added to the players MapSchema
+    this.room.state.players.onAdd = (player: IPlayer, key: string) => {
+      if (key === this.mySessionId) return
+
+      // track changes on every child object inside the players MapSchema
+      player.onChange = (changes) => {
+        changes.forEach((change) => {
+          const { field, value } = change
+          phaserEvents.emit(Event.PLAYER_UPDATED, field, value, key)
+
+          // when a new player finished setting up player name
+          if (field === 'name' && value !== '') {
+            phaserEvents.emit(Event.PLAYER_JOINED, player, key)
+            store.dispatch(setPlayerNameMap({ id: key, name: value }))
+            store.dispatch(pushPlayerJoinedMessage(value))
+          }
+        })
+      }
     }
-  }
 
-  videoConnected() {
-    console.log('🎥 Video connected')
-    // WebRTC já foi inicializado quando o usuário entrou na sala
-  }
-
-  // Inicializar WebRTC quando entrar em uma sala
-  initializeWebRTC() {
-    if (!this.webRTC && this.mySessionId) {
-      this.webRTC = new WebRTC(this.mySessionId, this)
-      console.log('🎥 WebRTC initialized for session:', this.mySessionId)
+    // an instance removed from the players MapSchema
+    this.room.state.players.onRemove = (player: IPlayer, key: string) => {
+      phaserEvents.emit(Event.PLAYER_LEFT, key)
+      this.webRTC?.deleteVideoStream(key)
+      this.webRTC?.deleteOnCalledVideoStream(key)
+      store.dispatch(pushPlayerLeftMessage(player.name))
+      store.dispatch(removePlayerNameMap(key))
     }
+
+    // new instance added to the computers MapSchema
+    this.room.state.computers.onAdd = (computer: IComputer, key: string) => {
+      // track changes on every child object's connectedUser
+      computer.connectedUser.onAdd = (item, index) => {
+        phaserEvents.emit(Event.ITEM_USER_ADDED, item, key, ItemType.COMPUTER)
+      }
+      computer.connectedUser.onRemove = (item, index) => {
+        phaserEvents.emit(Event.ITEM_USER_REMOVED, item, key, ItemType.COMPUTER)
+      }
+    }
+
+    // new instance added to the whiteboards MapSchema
+    this.room.state.whiteboards.onAdd = (whiteboard: IWhiteboard, key: string) => {
+      store.dispatch(
+        setWhiteboardUrls({
+          whiteboardId: key,
+          roomId: whiteboard.roomId,
+        })
+      )
+      // track changes on every child object's connectedUser
+      whiteboard.connectedUser.onAdd = (item, index) => {
+        phaserEvents.emit(Event.ITEM_USER_ADDED, item, key, ItemType.WHITEBOARD)
+      }
+      whiteboard.connectedUser.onRemove = (item, index) => {
+        phaserEvents.emit(Event.ITEM_USER_REMOVED, item, key, ItemType.WHITEBOARD)
+      }
+    }
+
+    // new instance added to the chatMessages ArraySchema
+    this.room.state.chatMessages.onAdd = (item, index) => {
+      store.dispatch(pushChatMessage(item))
+    }
+
+    // when the server sends room data
+    this.room.onMessage(Message.SEND_ROOM_DATA, (content) => {
+      store.dispatch(setJoinedRoomData(content))
+    })
+
+    // when a user sends a message
+    this.room.onMessage(Message.ADD_CHAT_MESSAGE, ({ clientId, content }) => {
+      phaserEvents.emit(Event.UPDATE_DIALOG_BUBBLE, clientId, content)
+    })
+
+    // when a peer disconnects with myPeer
+    this.room.onMessage(Message.DISCONNECT_STREAM, (clientId: string) => {
+      this.webRTC?.deleteOnCalledVideoStream(clientId)
+    })
+
+    // when a computer user stops sharing screen
+    this.room.onMessage(Message.STOP_SCREEN_SHARE, (clientId: string) => {
+      const computerState = store.getState().computer
+      computerState.shareScreenManager?.onUserLeft(clientId)
+    })
   }
 
-  // Métodos para eventos (compatibilidade)
-  onPlayerJoined(callback: any, context?: any) {
-    phaserEvents.on(Event.PLAYER_JOINED, callback, context)
-  }
-
-  onPlayerLeft(callback: any, context?: any) {
-    phaserEvents.on(Event.PLAYER_LEFT, callback, context)
-  }
-
-  onMyPlayerReady(callback: any, context?: any) {
-    phaserEvents.on(Event.MY_PLAYER_READY, callback, context)
-  }
-
-  onMyPlayerVideoConnected(callback: any, context?: any) {
-    phaserEvents.on(Event.MY_PLAYER_VIDEO_CONNECTED, callback, context)
-  }
-
-  onPlayerUpdated(callback: any, context?: any) {
-    phaserEvents.on(Event.PLAYER_UPDATED, callback, context)
-  }
-
-  onItemUserAdded(callback: any, context?: any) {
-    phaserEvents.on(Event.ITEM_USER_ADDED, callback, context)
-  }
-
-  onItemUserRemoved(callback: any, context?: any) {
-    phaserEvents.on(Event.ITEM_USER_REMOVED, callback, context)
-  }
-
-  onChatMessageAdded(callback: any, context?: any) {
+  // method to register event listener and call back function when a item user added
+  onChatMessageAdded(callback: (playerId: string, content: string) => void, context?: any) {
     phaserEvents.on(Event.UPDATE_DIALOG_BUBBLE, callback, context)
   }
 
-  onStopScreenShare(computerId: string) {
-    console.log('🖥️ Stop screen share:', computerId)
-    // TODO: Implementar lógica de screen share
+  // method to register event listener and call back function when a item user added
+  onItemUserAdded(
+    callback: (playerId: string, key: string, itemType: ItemType) => void,
+    context?: any
+  ) {
+    phaserEvents.on(Event.ITEM_USER_ADDED, callback, context)
   }
 
-  disconnectFromComputer(computerId: string) {
-    console.log('💻 Disconnect from computer:', computerId)
-    this.send({
-      type: 'disconnect_computer',
-      computerId: computerId
-    })
+  // method to register event listener and call back function when a item user removed
+  onItemUserRemoved(
+    callback: (playerId: string, key: string, itemType: ItemType) => void,
+    context?: any
+  ) {
+    phaserEvents.on(Event.ITEM_USER_REMOVED, callback, context)
   }
 
-  disconnectFromWhiteboard(whiteboardId: string) {
-    console.log('📝 Disconnect from whiteboard:', whiteboardId)
-    // TODO: Implementar lógica de whiteboard
+  // method to register event listener and call back function when a player joined
+  onPlayerJoined(callback: (Player: IPlayer, key: string) => void, context?: any) {
+    phaserEvents.on(Event.PLAYER_JOINED, callback, context)
   }
 
-  // Propriedade webRTC para compatibilidade
-  webRTC?: WebRTC
+  // method to register event listener and call back function when a player left
+  onPlayerLeft(callback: (key: string) => void, context?: any) {
+    phaserEvents.on(Event.PLAYER_LEFT, callback, context)
+  }
 
-  // Método para limpeza
-  disconnect() {
-    if (this.ws) {
-      this.ws.close()
-    }
+  // method to register event listener and call back function when myPlayer is ready to connect
+  onMyPlayerReady(callback: (key: string) => void, context?: any) {
+    phaserEvents.on(Event.MY_PLAYER_READY, callback, context)
+  }
+
+  // method to register event listener and call back function when my video is connected
+  onMyPlayerVideoConnected(callback: (key: string) => void, context?: any) {
+    phaserEvents.on(Event.MY_PLAYER_VIDEO_CONNECTED, callback, context)
+  }
+
+  // method to register event listener and call back function when a player updated
+  onPlayerUpdated(
+    callback: (field: string, value: number | string, key: string) => void,
+    context?: any
+  ) {
+    phaserEvents.on(Event.PLAYER_UPDATED, callback, context)
+  }
+
+  // method to send player updates to Colyseus server
+  updatePlayer(currentX: number, currentY: number, currentAnim: string) {
+    this.room?.send(Message.UPDATE_PLAYER, { x: currentX, y: currentY, anim: currentAnim })
+  }
+
+  // method to send player name to Colyseus server
+  updatePlayerName(currentName: string) {
+    this.room?.send(Message.UPDATE_PLAYER_NAME, { name: currentName })
+  }
+
+  // method to send ready-to-connect signal to Colyseus server
+  readyToConnect() {
+    this.room?.send(Message.READY_TO_CONNECT)
+    phaserEvents.emit(Event.MY_PLAYER_READY)
+  }
+
+  // method to send ready-to-connect signal to Colyseus server
+  videoConnected() {
+    this.room?.send(Message.VIDEO_CONNECTED)
+    phaserEvents.emit(Event.MY_PLAYER_VIDEO_CONNECTED)
+  }
+
+  // method to send stream-disconnection signal to Colyseus server
+  playerStreamDisconnect(id: string) {
+    this.room?.send(Message.DISCONNECT_STREAM, { clientId: id })
+    this.webRTC?.deleteVideoStream(id)
+  }
+
+  connectToComputer(id: string) {
+    this.room?.send(Message.CONNECT_TO_COMPUTER, { computerId: id })
+  }
+
+  disconnectFromComputer(id: string) {
+    this.room?.send(Message.DISCONNECT_FROM_COMPUTER, { computerId: id })
+  }
+
+  connectToWhiteboard(id: string) {
+    this.room?.send(Message.CONNECT_TO_WHITEBOARD, { whiteboardId: id })
+  }
+
+  disconnectFromWhiteboard(id: string) {
+    this.room?.send(Message.DISCONNECT_FROM_WHITEBOARD, { whiteboardId: id })
+  }
+
+  onStopScreenShare(id: string) {
+    this.room?.send(Message.STOP_SCREEN_SHARE, { computerId: id })
+  }
+
+  addChatMessage(content: string) {
+    this.room?.send(Message.ADD_CHAT_MESSAGE, { content: content })
   }
 }
