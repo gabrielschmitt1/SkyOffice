@@ -1,38 +1,21 @@
-import { Server } from 'colyseus'
-import { RoomType } from '../../types/Rooms'
-import { SkyOffice } from '../rooms/SkyOffice'
-
-// Durable Object para manter estado das salas
+// Worker simples para SkyOffice sem dependências externas
 export class RoomDurableObject {
   state: DurableObjectState
   env: Env
-  server: Server
+  rooms: Map<string, any>
+  connections: Set<WebSocket>
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.env = env
-    
-    // Inicializar servidor Colyseus
-    this.server = new Server({
-      // Configuração para Cloudflare Workers
-      presence: undefined, // Usar estado interno do Durable Object
-    })
-
-    // Registrar handlers das salas
-    this.server.define(RoomType.PUBLIC, SkyOffice, {
-      name: 'Public Lobby',
-      description: 'For making friends and familiarizing yourself with the controls',
-      password: null,
-      autoDispose: false,
-    })
-    this.server.define(RoomType.CUSTOM, SkyOffice).enableRealtimeListing()
+    this.rooms = new Map()
+    this.connections = new Set()
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
     
     if (url.pathname === '/ws') {
-      // Handle WebSocket upgrade
       return this.handleWebSocket(request)
     }
     
@@ -52,11 +35,9 @@ export class RoomDurableObject {
     const webSocketPair = new WebSocketPair()
     const [client, server] = Object.values(webSocketPair)
 
-    // Aceitar a conexão WebSocket
     server.accept()
-
-    // Integrar com Colyseus
-    this.handleColyseusConnection(server)
+    this.connections.add(server)
+    this.handleGameConnection(server)
 
     return new Response(null, {
       status: 101,
@@ -64,29 +45,85 @@ export class RoomDurableObject {
     })
   }
 
-  private handleColyseusConnection(webSocket: WebSocket) {
-    // Implementação simplificada para Cloudflare Workers
-    // TODO: Integrar adequadamente com Colyseus quando suportado
+  private handleGameConnection(webSocket: WebSocket) {
+    const connectionId = Math.random().toString(36).substr(2, 9)
+    
+    // Enviar confirmação de conexão
+    webSocket.send(JSON.stringify({
+      type: 'connected',
+      connectionId,
+      message: 'Connected to SkyOffice server'
+    }))
     
     webSocket.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data as string)
-        // Processar mensagens básicas
         console.log('Received message:', data)
         
-        // Echo para teste
-        webSocket.send(JSON.stringify({ type: 'echo', data }))
+        // Processar diferentes tipos de mensagens
+        switch (data.type) {
+          case 'join_room':
+            webSocket.send(JSON.stringify({
+              type: 'room_joined',
+              roomId: data.roomId || 'lobby',
+              message: 'Successfully joined room'
+            }))
+            break
+            
+          case 'player_move':
+            // Broadcast movimento para outros players
+            this.broadcast({
+              type: 'player_moved',
+              playerId: connectionId,
+              position: data.position
+            }, webSocket)
+            break
+
+          case 'chat_message':
+            // Broadcast mensagem de chat
+            this.broadcast({
+              type: 'chat_message',
+              playerId: connectionId,
+              message: data.message,
+              timestamp: Date.now()
+            }, webSocket)
+            break
+            
+          default:
+            // Echo para mensagens não reconhecidas
+            webSocket.send(JSON.stringify({ type: 'echo', data }))
+        }
       } catch (error) {
         console.error('Error processing message:', error)
+        webSocket.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to process message'
+        }))
       }
     })
 
     webSocket.addEventListener('close', () => {
-      console.log('WebSocket connection closed')
+      console.log('WebSocket connection closed:', connectionId)
+      this.connections.delete(webSocket)
     })
 
     webSocket.addEventListener('error', (event) => {
       console.error('WebSocket error:', event)
+      this.connections.delete(webSocket)
+    })
+  }
+
+  private broadcast(message: any, sender?: WebSocket) {
+    const messageStr = JSON.stringify(message)
+    this.connections.forEach(ws => {
+      if (ws !== sender && ws.readyState === WebSocket.READY_STATE_OPEN) {
+        try {
+          ws.send(messageStr)
+        } catch (error) {
+          console.error('Error broadcasting message:', error)
+          this.connections.delete(ws)
+        }
+      }
     })
   }
 }
@@ -109,16 +146,31 @@ export default {
 
     // Health check
     if (url.pathname === '/health') {
-      return new Response(JSON.stringify({ status: 'ok', timestamp: Date.now() }), {
+      return new Response(JSON.stringify({ 
+        status: 'ok', 
+        timestamp: Date.now(),
+        message: 'SkyOffice Worker is healthy'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // API routes para listar salas
+    // API endpoint para listar salas disponíveis
+    if (url.pathname === '/api/rooms') {
+      return new Response(JSON.stringify([
+        { id: 'lobby', name: 'Public Lobby', players: 0, maxPlayers: 50 },
+        { id: 'office1', name: 'Office Meeting Room', players: 0, maxPlayers: 20 }
+      ]), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Endpoint para criar/juntar-se a uma sala
     if (url.pathname === '/matchmake/joinOrCreate/lobby') {
       return new Response(JSON.stringify({ 
         message: 'Lobby endpoint',
-        roomId: 'lobby-' + Math.random().toString(36).substr(2, 9)
+        roomId: 'lobby-' + Math.random().toString(36).substr(2, 9),
+        sessionId: Math.random().toString(36).substr(2, 16)
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -129,6 +181,24 @@ export default {
       const durableObjectId = env.ROOMS.idFromName('game-server')
       const durableObject = env.ROOMS.get(durableObjectId)
       return durableObject.fetch(request)
+    }
+
+    // Página inicial do Worker com informações úteis
+    if (url.pathname === '/') {
+      return new Response(JSON.stringify({
+        message: 'SkyOffice Worker is running!',
+        version: '2.0.0',
+        endpoints: {
+          health: '/health',
+          websocket: '/ws',
+          rooms: '/api/rooms',
+          matchmaking: '/matchmake/joinOrCreate/lobby'
+        },
+        timestamp: new Date().toISOString(),
+        status: 'online'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     return new Response('Not Found', { 
@@ -142,4 +212,12 @@ export default {
 interface Env {
   ROOMS: DurableObjectNamespace
   NODE_ENV?: string
+}
+
+// Extensão dos tipos globais do WebSocket para Cloudflare Workers
+declare const WebSocket: {
+  readonly READY_STATE_CONNECTING: 0
+  readonly READY_STATE_OPEN: 1
+  readonly READY_STATE_CLOSING: 2
+  readonly READY_STATE_CLOSED: 3
 }
