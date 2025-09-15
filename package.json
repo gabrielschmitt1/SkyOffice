@@ -6,6 +6,13 @@
   "scripts": {
     "start": "cd server && ts-node-dev --project tsconfig.server.json --respawn --transpile-only index.ts",
     "heroku-postbuild": "yarn && cd types && yarn && cd ../server && tsc --project tsconfig.server.json",
+    "build:worker": "cd types && yarn && cd ../server && tsc --project tsconfig.worker.json",
+    "build:client": "cd client && yarn && yarn build",
+    "build:client:cf": "cd client && yarn && vite build --config vite.config.cloudflare.ts",
+    "deploy:worker": "wrangler deploy",
+    "deploy:client": "cd client && wrangler pages deploy dist --project-name skyoffice-client",
+    "deploy:all": "yarn build:client:cf && yarn build:worker && yarn deploy:worker",
+    "dev:worker": "wrangler dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -20,6 +27,7 @@
   },
   "homepage": "https://github.com/kevinshen56714/SkyOffice#readme",
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240925.0",
     "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.33.0",
     "copyfiles": "^2.4.1",
@@ -27,7 +35,8 @@
     "minimist": ">=1.2.2",
     "rimraf": "^2.7.1",
     "ts-node": "^8.1.0",
-    "ts-node-dev": "^1.0.0-pre.63"
+    "ts-node-dev": "^1.0.0-pre.63",
+    "wrangler": "^3.78.12"
   },
   "dependencies": {
     "@colyseus/command": "^0.1.7",

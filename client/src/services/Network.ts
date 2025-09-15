@@ -31,10 +31,16 @@ export default class Network {
 
   constructor() {
     const protocol = window.location.protocol.replace('http', 'ws')
-    const endpoint =
-      process.env.NODE_ENV === 'production'
-        ? import.meta.env.VITE_SERVER_URL
-        : `${protocol}//${window.location.hostname}:2567`
+    let endpoint: string
+    
+    if (process.env.NODE_ENV === 'production') {
+      // Para Cloudflare Pages/Workers
+      endpoint = import.meta.env.VITE_SERVER_URL || 'wss://skyoffice-server.your-subdomain.workers.dev'
+    } else {
+      // Para desenvolvimento local
+      endpoint = `${protocol}//${window.location.hostname}:2567`
+    }
+    
     this.client = new Client(endpoint)
     this.joinLobbyRoom().then(() => {
       store.dispatch(setLobbyJoined(true))

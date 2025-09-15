@@ -1,0 +1,8 @@
+# Cloudflare Pages redirects
+# SPA routing - redirect all routes to index.html
+/*    /index.html   200
+
+# API proxy para o worker
+/api/*  https://skyoffice-server.your-subdomain.workers.dev/:splat  200
+/ws     https://skyoffice-server.your-subdomain.workers.dev/ws      200
+/matchmake/*  https://skyoffice-server.your-subdomain.workers.dev/matchmake/:splat  200

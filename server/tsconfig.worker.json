@@ -1,0 +1,31 @@
+{
+    "compilerOptions": {
+      "target": "ES2022",
+      "lib": ["ES2022", "WebWorker"],
+      "module": "ESNext",
+      "moduleResolution": "bundler",
+      "allowSyntheticDefaultImports": true,
+      "esModuleInterop": true,
+      "allowJs": true,
+      "checkJs": false,
+      "strict": true,
+      "noImplicitAny": false,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true,
+      "resolveJsonModule": true,
+      "outDir": "./worker-dist",
+      "rootDir": ".",
+      "experimentalDecorators": true,
+      "emitDecoratorMetadata": true,
+      "types": ["@cloudflare/workers-types"]
+    },
+    "include": [
+      "worker/**/*",
+      "../types/**/*"
+    ],
+    "exclude": [
+      "node_modules",
+      "worker-dist"
+    ]
+  }
+  
