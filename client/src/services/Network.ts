@@ -150,6 +150,18 @@ export default class Network {
         store.dispatch(pushChatMessage(chatMessage))
         break
         
+      case 'computer_user_joined':
+        console.log('💻 User joined computer:', data.playerId, 'computer:', data.computerId)
+        // Emitir evento para o Game.ts (playerId, itemId, itemType)
+        phaserEvents.emit(Event.ITEM_USER_ADDED, data.playerId, data.computerId, 'COMPUTER')
+        break
+        
+      case 'computer_user_left':
+        console.log('💻 User left computer:', data.playerId, 'computer:', data.computerId)
+        // Emitir evento para o Game.ts (playerId, itemId, itemType)
+        phaserEvents.emit(Event.ITEM_USER_REMOVED, data.playerId, data.computerId, 'COMPUTER')
+        break
+        
       case 'echo':
         console.log('🔊 Echo from server:', data.data)
         break
@@ -173,7 +185,7 @@ export default class Network {
       if (this.connected) {
         this.send({
           type: 'join_room',
-          roomId: 'public-lobby'
+          roomId: 'lobby'
         })
         // Inicializar WebRTC quando entrar na sala
         this.initializeWebRTC()
@@ -249,10 +261,13 @@ export default class Network {
     store.dispatch(pushChatMessage(myChatMessage))
   }
 
-  // Métodos vazios para compatibilidade (Computer/Whiteboard)
+  // Métodos para computadores
   connectToComputer(computerId: string) {
     console.log('💻 Computer connection requested:', computerId)
-    // TODO: Implementar lógica de computador
+    this.send({
+      type: 'connect_computer',
+      computerId: computerId
+    })
   }
 
   connectToWhiteboard(whiteboardId: string) {
@@ -321,7 +336,10 @@ export default class Network {
 
   disconnectFromComputer(computerId: string) {
     console.log('💻 Disconnect from computer:', computerId)
-    // TODO: Implementar lógica de computador
+    this.send({
+      type: 'disconnect_computer',
+      computerId: computerId
+    })
   }
 
   disconnectFromWhiteboard(whiteboardId: string) {

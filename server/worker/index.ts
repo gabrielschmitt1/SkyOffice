@@ -5,6 +5,7 @@ export class RoomDurableObject {
   rooms: Map<string, any>
   connections: Map<string, WebSocket>
   roomConnections: Map<string, Set<string>>
+  computerUsers: Map<string, Set<string>> // computerId -> Set<connectionId>
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -12,6 +13,7 @@ export class RoomDurableObject {
     this.rooms = new Map()
     this.connections = new Map()
     this.roomConnections = new Map()
+    this.computerUsers = new Map()
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -87,6 +89,14 @@ export class RoomDurableObject {
             }, connectionId)
             break
             
+          case 'connect_computer':
+            this.handleConnectComputer(connectionId, data.computerId)
+            break
+            
+          case 'disconnect_computer':
+            this.handleDisconnectComputer(connectionId, data.computerId)
+            break
+            
           default:
             // Echo para mensagens não reconhecidas
             webSocket.send(JSON.stringify({ type: 'echo', data }))
@@ -142,6 +152,7 @@ export class RoomDurableObject {
 
   private handleDisconnect(connectionId: string) {
     this.removeFromAllRooms(connectionId)
+    this.removeFromAllComputers(connectionId)
     this.connections.delete(connectionId)
   }
 
@@ -205,6 +216,92 @@ export class RoomDurableObject {
         }
       }
     })
+  }
+
+  private handleConnectComputer(connectionId: string, computerId: string) {
+    // Remover de outros computadores primeiro
+    this.removeFromAllComputers(connectionId)
+    
+    // Adicionar ao computador
+    if (!this.computerUsers.has(computerId)) {
+      this.computerUsers.set(computerId, new Set())
+    }
+    this.computerUsers.get(computerId)!.add(connectionId)
+    
+    // Notificar outros usuários no computador
+    this.broadcastToComputer({
+      type: 'computer_user_joined',
+      playerId: connectionId,
+      computerId: computerId
+    }, computerId, connectionId)
+    
+    console.log(`Player ${connectionId} connected to computer ${computerId}. Total users: ${this.computerUsers.get(computerId)!.size}`)
+  }
+
+  private handleDisconnectComputer(connectionId: string, computerId: string) {
+    if (this.computerUsers.has(computerId)) {
+      this.computerUsers.get(computerId)!.delete(connectionId)
+      
+      // Notificar outros usuários no computador
+      this.broadcastToComputer({
+        type: 'computer_user_left',
+        playerId: connectionId,
+        computerId: computerId
+      }, computerId, connectionId)
+      
+      console.log(`Player ${connectionId} disconnected from computer ${computerId}. Remaining users: ${this.computerUsers.get(computerId)!.size}`)
+      
+      // Se o computador ficou vazio, podemos removê-lo
+      if (this.computerUsers.get(computerId)!.size === 0) {
+        this.computerUsers.delete(computerId)
+      }
+    }
+  }
+
+  private removeFromAllComputers(connectionId: string) {
+    for (const [computerId, users] of this.computerUsers) {
+      if (users.has(connectionId)) {
+        users.delete(connectionId)
+        
+        // Notificar outros usuários
+        this.broadcastToComputer({
+          type: 'computer_user_left',
+          playerId: connectionId,
+          computerId: computerId
+        }, computerId, connectionId)
+        
+        console.log(`Player ${connectionId} left computer ${computerId}. Remaining users: ${users.size}`)
+        
+        // Se o computador ficou vazio, removê-lo
+        if (users.size === 0) {
+          this.computerUsers.delete(computerId)
+        }
+        break
+      }
+    }
+  }
+
+  private broadcastToComputer(message: any, computerId: string, senderConnectionId: string) {
+    const messageStr = JSON.stringify(message)
+    
+    if (this.computerUsers.has(computerId)) {
+      const users = this.computerUsers.get(computerId)!
+      
+      // Broadcast para todos no computador exceto o sender
+      for (const userId of users) {
+        if (userId !== senderConnectionId) {
+          const ws = this.connections.get(userId)
+          if (ws && ws.readyState === WebSocket.READY_STATE_OPEN) {
+            try {
+              ws.send(messageStr)
+            } catch (error) {
+              console.error('Error broadcasting computer message:', error)
+              this.handleDisconnect(userId)
+            }
+          }
+        }
+      }
+    }
   }
 }
 
