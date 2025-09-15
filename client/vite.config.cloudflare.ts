@@ -14,7 +14,6 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
           phaser: ['phaser'],
-          colyseus: ['colyseus.js'],
           mui: ['@mui/material', '@mui/icons-material']
         }
       }
@@ -22,7 +21,7 @@ export default defineConfig({
   },
   define: {
     // Configurar URL do servidor para produção
-    'process.env.VITE_SERVER_URL': JSON.stringify(process.env.VITE_SERVER_URL || 'wss://skyoffice-server.your-subdomain.workers.dev')
+    'process.env.VITE_SERVER_URL': JSON.stringify(process.env.VITE_SERVER_URL || 'wss://skyoffice.gabrielschmitt7.workers.dev')
   },
   server: {
     port: 5173,
