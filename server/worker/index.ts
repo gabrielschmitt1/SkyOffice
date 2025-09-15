@@ -97,6 +97,10 @@ export class RoomDurableObject {
             this.handleDisconnectComputer(connectionId, data.computerId)
             break
             
+          case 'create_room':
+            this.handleCreateRoom(webSocket, connectionId, data.roomData)
+            break
+            
           default:
             // Echo para mensagens não reconhecidas
             webSocket.send(JSON.stringify({ type: 'echo', data }))
@@ -131,13 +135,17 @@ export class RoomDurableObject {
     }
     this.roomConnections.get(roomId)!.add(connectionId)
     
-    // Enviar confirmação
+    // Enviar confirmação com lista de jogadores existentes
+    const existingPlayers = Array.from(this.roomConnections.get(roomId)!.values())
+      .filter(id => id !== connectionId)
+    
     webSocket.send(JSON.stringify({
       type: 'room_joined',
       roomId: roomId,
       connectionId: connectionId,
       message: 'Successfully joined room',
-      playersInRoom: this.roomConnections.get(roomId)!.size
+      playersInRoom: this.roomConnections.get(roomId)!.size,
+      existingPlayers: existingPlayers
     }))
     
     // Notificar outros players na sala
@@ -303,6 +311,29 @@ export class RoomDurableObject {
       }
     }
   }
+
+  private handleCreateRoom(webSocket: WebSocket, connectionId: string, roomData: any) {
+    const roomId = `custom-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    // Criar a sala
+    if (!this.roomConnections.has(roomId)) {
+      this.roomConnections.set(roomId, new Set())
+    }
+    
+    // Adicionar o criador à sala
+    this.roomConnections.get(roomId)!.add(connectionId)
+    
+    // Enviar confirmação de criação
+    webSocket.send(JSON.stringify({
+      type: 'room_created',
+      roomId: roomId,
+      connectionId: connectionId,
+      message: 'Custom room created successfully',
+      roomData: roomData
+    }))
+    
+    console.log(`Player ${connectionId} created custom room ${roomId}`)
+  }
 }
 
 // Worker principal
@@ -338,9 +369,24 @@ export default {
       
       // Adicionar salas ativas com jogadores reais
       for (const [roomId, players] of this.roomConnections) {
+        let roomName = 'Public Lobby'
+        let roomType = 'PUBLIC'
+        
+        if (roomId === 'lobby') {
+          roomName = 'Public Lobby'
+          roomType = 'PUBLIC'
+        } else if (roomId.startsWith('custom-')) {
+          roomName = `Custom Room ${roomId.split('-')[1]}`
+          roomType = 'CUSTOM'
+        } else {
+          roomName = `Room ${roomId}`
+          roomType = 'CUSTOM'
+        }
+        
         rooms.push({
           id: roomId,
-          name: roomId === 'lobby' ? 'Public Lobby' : `Room ${roomId}`,
+          name: roomName,
+          roomType: roomType,
           players: players.size,
           maxPlayers: 50
         })
@@ -351,6 +397,7 @@ export default {
         rooms.push({
           id: 'lobby',
           name: 'Public Lobby',
+          roomType: 'PUBLIC',
           players: 0,
           maxPlayers: 50
         })

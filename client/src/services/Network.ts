@@ -112,6 +112,23 @@ export default class Network {
         console.log('🏠 Joined room:', data.roomId)
         this.mySessionId = data.connectionId || Math.random().toString(36).substr(2, 9)
         store.dispatch(setSessionId(this.mySessionId))
+        
+        // Criar jogadores existentes na sala
+        if (data.existingPlayers && Array.isArray(data.existingPlayers)) {
+          console.log('👥 Creating existing players:', data.existingPlayers)
+          data.existingPlayers.forEach((playerId: string) => {
+            const existingPlayer = {
+              x: 0,
+              y: 0,
+              name: `Player ${playerId}`,
+              animKey: 'adam-idle-down'
+            } as any
+            phaserEvents.emit(Event.PLAYER_JOINED, existingPlayer, playerId)
+          })
+        }
+        
+        // Garantir que WebRTC seja inicializado
+        this.initializeWebRTC()
         break
         
       case 'player_moved':
@@ -160,6 +177,16 @@ export default class Network {
         console.log('💻 User left computer:', data.playerId, 'computer:', data.computerId)
         // Emitir evento para o Game.ts (playerId, itemId, itemType)
         phaserEvents.emit(Event.ITEM_USER_REMOVED, data.playerId, data.computerId, 'COMPUTER')
+        break
+        
+      case 'room_created':
+        console.log('🏠 Custom room created:', data.roomId)
+        this.mySessionId = data.connectionId || Math.random().toString(36).substr(2, 9)
+        store.dispatch(setSessionId(this.mySessionId))
+        // Inicializar WebRTC quando entrar na sala criada
+        setTimeout(() => {
+          this.initializeWebRTC()
+        }, 100)
         break
         
       case 'echo':
