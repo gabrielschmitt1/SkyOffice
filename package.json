@@ -8,7 +8,7 @@
     "heroku-postbuild": "bun install && cd types && bun install && cd ../server && tsc --project tsconfig.server.json",
     "build:worker": "cd types && yarn install && cd ../server && tsc --project tsconfig.worker.json",
     "build:client": "cd client && bun install && bun run build",
-    "build:client:cf": "cd client && bun install && bunx vite build --config vite.config.cloudflare.ts",
+    "build:client:cf": "cd client && yarn install && npx vite build --config vite.config.cloudflare.ts",
     "build:cf": "bun install && bun run build:client:cf && bun run build:worker",
     "deploy:worker": "wrangler deploy",
     "deploy:client": "cd client && wrangler pages deploy dist --project-name skyoffice-client",

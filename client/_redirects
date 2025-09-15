@@ -3,6 +3,6 @@
 /*    /index.html   200
 
 # API proxy para o worker
-/api/*  https://skyoffice-server.your-subdomain.workers.dev/:splat  200
-/ws     https://skyoffice-server.your-subdomain.workers.dev/ws      200
-/matchmake/*  https://skyoffice-server.your-subdomain.workers.dev/matchmake/:splat  200
+/api/*  https://skyoffice.gabrielschmitt7.workers.dev/:splat  200
+/ws     https://skyoffice.gabrielschmitt7.workers.dev/ws      200
+/matchmake/*  https://skyoffice.gabrielschmitt7.workers.dev/matchmake/:splat  200
