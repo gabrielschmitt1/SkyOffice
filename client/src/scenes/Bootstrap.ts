@@ -1,12 +1,12 @@
 import Phaser from 'phaser'
-import SimpleNetwork from '../services/SimpleNetwork'
+import Network from '../services/Network'
 import { BackgroundMode } from '../../../types/BackgroundMode'
 import store from '../stores'
 import { setRoomJoined } from '../stores/RoomStore'
 
 export default class Bootstrap extends Phaser.Scene {
   private preloadComplete = false
-  network!: SimpleNetwork
+  network!: Network
 
   constructor() {
     super('bootstrap')
@@ -84,7 +84,7 @@ export default class Bootstrap extends Phaser.Scene {
   }
 
   init() {
-    this.network = new SimpleNetwork()
+    this.network = new Network()
   }
 
   private launchBackground(backgroundMode: BackgroundMode) {

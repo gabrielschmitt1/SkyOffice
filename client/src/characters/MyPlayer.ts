@@ -3,7 +3,7 @@ import PlayerSelector from './PlayerSelector'
 import { PlayerBehavior } from '../../../types/PlayerBehavior'
 import { sittingShiftData } from './Player'
 import Player from './Player'
-import SimpleNetwork from '../services/SimpleNetwork'
+import Network from '../services/Network'
 import Chair from '../items/Chair'
 import Computer from '../items/Computer'
 import Whiteboard from '../items/Whiteboard'
@@ -53,7 +53,7 @@ export default class MyPlayer extends Player {
     cursors: NavKeys,
     keyE: Phaser.Input.Keyboard.Key,
     keyR: Phaser.Input.Keyboard.Key,
-    network: SimpleNetwork
+    network: Network
   ) {
     if (!cursors) return
 

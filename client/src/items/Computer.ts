@@ -1,7 +1,7 @@
 import { ItemType } from '../../../types/Items'
 import store from '../stores'
 import Item from './Item'
-import SimpleNetwork from '../services/SimpleNetwork'
+import Network from '../services/Network'
 import { openComputerDialog } from '../stores/ComputerStore'
 
 export default class Computer extends Item {
@@ -53,10 +53,9 @@ export default class Computer extends Item {
     this.updateStatus()
   }
 
-  openDialog(playerId: string, network: SimpleNetwork) {
+  openDialog(playerId: string, network: Network) {
     if (!this.id) return
     store.dispatch(openComputerDialog({ computerId: this.id, myUserId: playerId }))
-    // network.connectToComputer(this.id) // Método não existe no SimpleNetwork - comentado temporariamente
-    console.log('Computer dialog opened for:', this.id)
+    network.connectToComputer(this.id)
   }
 }

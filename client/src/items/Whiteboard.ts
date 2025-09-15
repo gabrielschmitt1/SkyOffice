@@ -1,7 +1,7 @@
 import { ItemType } from '../../../types/Items'
 import store from '../stores'
 import Item from './Item'
-import SimpleNetwork from '../services/SimpleNetwork'
+import Network from '../services/Network'
 import { openWhiteboardDialog } from '../stores/WhiteboardStore'
 
 export default class Whiteboard extends Item {
@@ -45,10 +45,9 @@ export default class Whiteboard extends Item {
     this.updateStatus()
   }
 
-  openDialog(network: SimpleNetwork) {
+  openDialog(network: Network) {
     if (!this.id) return
     store.dispatch(openWhiteboardDialog(this.id))
-    // network.connectToWhiteboard(this.id) // Método não existe no SimpleNetwork - comentado temporariamente
-    console.log('Whiteboard dialog opened for:', this.id)
+    network.connectToWhiteboard(this.id)
   }
 }
