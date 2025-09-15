@@ -38,7 +38,13 @@ export default class Network {
 
     console.log('🔗 Connecting to:', endpoint)
 
-    this.ws = new WebSocket(endpoint)
+    try {
+      this.ws = new WebSocket(endpoint)
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error)
+      this.attemptReconnect()
+      return
+    }
 
     this.ws.onopen = () => {
       console.log('✅ Connected to SkyOffice server!')
@@ -75,6 +81,8 @@ export default class Network {
 
     this.ws.onerror = (error) => {
       console.error('WebSocket error:', error)
+      this.connected = false
+      store.dispatch(setLobbyJoined(false))
     }
   }
 
@@ -114,11 +122,12 @@ export default class Network {
         
       case 'chat_message':
         // Adicionar mensagem ao chat
-        store.dispatch(pushChatMessage({
-          author: data.playerId,
-          createdAt: data.timestamp,
-          content: data.message
-        }))
+        const chatMessage = {
+          author: data.playerId || 'Unknown',
+          createdAt: data.timestamp || Date.now(),
+          content: data.message || ''
+        } as any
+        store.dispatch(pushChatMessage(chatMessage))
         break
         
       case 'echo':
@@ -140,7 +149,7 @@ export default class Network {
 
   // Métodos para compatibilidade com o código existente
   async joinOrCreatePublic(): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (this.connected) {
         this.send({
           type: 'join_room',
@@ -148,13 +157,13 @@ export default class Network {
         })
         resolve({ sessionId: this.mySessionId })
       } else {
-        throw new Error('Not connected to server')
+        reject(new Error('Not connected to server'))
       }
     })
   }
 
   async joinCustomById(roomId: string, password?: string): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (this.connected) {
         this.send({
           type: 'join_room',
@@ -163,13 +172,13 @@ export default class Network {
         })
         resolve({ sessionId: this.mySessionId })
       } else {
-        throw new Error('Not connected to server')
+        reject(new Error('Not connected to server'))
       }
     })
   }
 
   async createCustom(roomData: any): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (this.connected) {
         this.send({
           type: 'create_room',
@@ -177,7 +186,7 @@ export default class Network {
         })
         resolve({ sessionId: this.mySessionId })
       } else {
-        throw new Error('Not connected to server')
+        reject(new Error('Not connected to server'))
       }
     })
   }
@@ -216,6 +225,68 @@ export default class Network {
     console.log('📝 Whiteboard connection requested:', whiteboardId)
     // TODO: Implementar lógica de whiteboard
   }
+
+  // Métodos para compatibilidade com WebRTC
+  readyToConnect() {
+    console.log('🎥 Ready to connect video')
+    // TODO: Implementar lógica de WebRTC
+  }
+
+  videoConnected() {
+    console.log('🎥 Video connected')
+    // TODO: Implementar lógica de WebRTC
+  }
+
+  // Métodos para eventos (compatibilidade)
+  onPlayerJoined(callback: any, context?: any) {
+    phaserEvents.on(Event.PLAYER_JOINED, callback, context)
+  }
+
+  onPlayerLeft(callback: any, context?: any) {
+    phaserEvents.on(Event.PLAYER_LEFT, callback, context)
+  }
+
+  onMyPlayerReady(callback: any, context?: any) {
+    phaserEvents.on(Event.MY_PLAYER_READY, callback, context)
+  }
+
+  onMyPlayerVideoConnected(callback: any, context?: any) {
+    phaserEvents.on(Event.MY_PLAYER_VIDEO_CONNECTED, callback, context)
+  }
+
+  onPlayerUpdated(callback: any, context?: any) {
+    phaserEvents.on(Event.PLAYER_UPDATED, callback, context)
+  }
+
+  onItemUserAdded(callback: any, context?: any) {
+    phaserEvents.on(Event.ITEM_USER_ADDED, callback, context)
+  }
+
+  onItemUserRemoved(callback: any, context?: any) {
+    phaserEvents.on(Event.ITEM_USER_REMOVED, callback, context)
+  }
+
+  onChatMessageAdded(callback: any, context?: any) {
+    phaserEvents.on(Event.UPDATE_DIALOG_BUBBLE, callback, context)
+  }
+
+  onStopScreenShare(computerId: string) {
+    console.log('🖥️ Stop screen share:', computerId)
+    // TODO: Implementar lógica de screen share
+  }
+
+  disconnectFromComputer(computerId: string) {
+    console.log('💻 Disconnect from computer:', computerId)
+    // TODO: Implementar lógica de computador
+  }
+
+  disconnectFromWhiteboard(whiteboardId: string) {
+    console.log('📝 Disconnect from whiteboard:', whiteboardId)
+    // TODO: Implementar lógica de whiteboard
+  }
+
+  // Propriedade webRTC para compatibilidade
+  webRTC?: any
 
   // Método para limpeza
   disconnect() {

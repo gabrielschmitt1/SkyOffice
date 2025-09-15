@@ -1,13 +1,22 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { RoomAvailable } from 'colyseus.js'
+// Remover import do colyseus.js - definindo interface local
 import { RoomType } from '../../../types/Rooms'
+
+// Definir interface local em vez de usar RoomAvailable do Colyseus
+interface RoomAvailable {
+  roomId: string
+  clients: number
+  maxClients: number
+  metadata?: any
+  name?: string
+}
 
 interface RoomInterface extends RoomAvailable {
   name?: string
 }
 
 /**
- * Colyseus' real time room list always includes the public lobby so we have to remove it manually.
+ * Custom room list filter
  */
 const isCustomRoom = (room: RoomInterface) => {
   return room.name === RoomType.CUSTOM

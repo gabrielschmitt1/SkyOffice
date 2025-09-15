@@ -1,4 +1,4 @@
-// Worker simples para SkyOffice sem dependências externas
+// Worker compatível com Colyseus para SkyOffice
 export class RoomDurableObject {
     state;
     env;
@@ -12,7 +12,8 @@ export class RoomDurableObject {
     }
     async fetch(request) {
         const url = new URL(request.url);
-        if (url.pathname === '/ws') {
+        // Colyseus WebSocket upgrade
+        if (url.pathname === '/' || url.pathname === '/ws') {
             return this.handleWebSocket(request);
         }
         if (url.pathname === '/health') {
@@ -152,8 +153,8 @@ export default {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
         }
-        // Redirecionar conexões WebSocket para Durable Object
-        if (url.pathname === '/ws' || url.pathname.startsWith('/matchmake/')) {
+        // Redirecionar conexões WebSocket para Durable Object (Colyseus compatibility)
+        if (url.pathname === '/' || url.pathname === '/ws' || url.pathname.startsWith('/matchmake/')) {
             const durableObjectId = env.ROOMS.idFromName('game-server');
             const durableObject = env.ROOMS.get(durableObjectId);
             return durableObject.fetch(request);

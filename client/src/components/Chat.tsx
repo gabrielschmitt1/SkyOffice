@@ -201,7 +201,7 @@ export default function Chat() {
     const val = inputValue.trim()
     setInputValue('')
     if (val) {
-      game.network.addChatMessage(val)
+      game.network.sendChatMessage(val)
       game.myPlayer.updateDialogBubble(val)
     }
   }
