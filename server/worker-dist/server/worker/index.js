@@ -64,7 +64,7 @@ export class RoomDurableObject {
                         }, connectionId);
                         break;
                     case 'chat_message':
-                        // Broadcast mensagem de chat para a sala
+                        // Broadcast mensagem de chat para a sala (exceto para o remetente)
                         this.broadcastToRoom({
                             type: 'chat_message',
                             playerId: connectionId,
@@ -106,6 +106,7 @@ export class RoomDurableObject {
         webSocket.send(JSON.stringify({
             type: 'room_joined',
             roomId: roomId,
+            connectionId: connectionId,
             message: 'Successfully joined room',
             playersInRoom: this.roomConnections.get(roomId).size
         }));

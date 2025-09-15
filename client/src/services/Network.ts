@@ -110,6 +110,8 @@ export default class Network {
         
       case 'room_joined':
         console.log('🏠 Joined room:', data.roomId)
+        this.mySessionId = data.connectionId || Math.random().toString(36).substr(2, 9)
+        store.dispatch(setSessionId(this.mySessionId))
         break
         
       case 'player_moved':
@@ -119,6 +121,23 @@ export default class Network {
           x: data.position?.x,
           y: data.position?.y
         })
+        break
+        
+      case 'player_joined':
+        console.log('👤 Player joined:', data.playerId)
+        // Criar um objeto player simulado para compatibilidade
+        const newPlayer = {
+          x: 0,
+          y: 0,
+          name: `Player ${data.playerId}`,
+          animKey: 'adam-idle-down'
+        } as any
+        phaserEvents.emit(Event.PLAYER_JOINED, newPlayer, data.playerId)
+        break
+        
+      case 'player_left':
+        console.log('👋 Player left:', data.playerId)
+        phaserEvents.emit(Event.PLAYER_LEFT, data.playerId)
         break
         
       case 'chat_message':
@@ -220,6 +239,14 @@ export default class Network {
       type: 'chat_message',
       message: content
     })
+    
+    // Adicionar a própria mensagem ao chat imediatamente
+    const myChatMessage = {
+      author: this.mySessionId || 'Me',
+      createdAt: Date.now(),
+      content: content
+    } as any
+    store.dispatch(pushChatMessage(myChatMessage))
   }
 
   // Métodos vazios para compatibilidade (Computer/Whiteboard)
